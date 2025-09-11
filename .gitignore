@@ -1,0 +1,10 @@
+@"
+bin/
+obj/
+*.user
+*.suo
+*.swp
+.vs/
+TestResults/
+*.log
+"@ | Out-File -Encoding utf8 .gitignore
