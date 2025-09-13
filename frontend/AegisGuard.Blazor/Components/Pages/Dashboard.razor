@@ -1,0 +1,242 @@
+@page "/dashboard"
+@rendermode InteractiveServer
+
+@using System.Net.Http.Json
+@using AegisGuard.Blazor
+@inject IHttpClientFactory HttpClientFactory
+
+<h3 class="mb-3">AegisGuard – Security Dashboard</h3>
+
+<!-- Formular: neuen Log erstellen -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">Neuen Log erstellen</h5>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Source</label>
+                <input class="form-control" @bind="_newLog.source" placeholder="z.B. zap, trivy, zaproxy" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Severity</label>
+                <select class="form-select" @bind="_newLog.severity">
+                    <option>Info</option>
+                    <option>Warning</option>
+                    <option>High</option>
+                    <option>Critical</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Message</label>
+                <input class="form-control" @bind="_newLog.message" placeholder="Kurze Beschreibung" />
+            </div>
+            <div class="col-12">
+                <label class="form-label">Metadata (JSON optional)</label>
+                <input class="form-control" @bind="_newLog.metadata" placeholder='{"url":"/test"}' />
+            </div>
+        </div>
+
+        <div class="mt-3">
+            <button class="btn btn-success me-2" @onclick="SubmitLog" disabled="@_submitting">Erstellen</button>
+            <button class="btn btn-outline-secondary" @onclick="ResetForm" disabled="@_submitting">Reset</button>
+            @if (!string.IsNullOrWhiteSpace(_formMsg))
+            {
+                <span class="ms-3">@_formMsg</span>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Refresh / Auto-Refresh -->
+<div class="mb-3">
+    <button class="btn btn-primary me-2" @onclick="LoadData">Refresh</button>
+    <label class="ms-2">
+        <input type="checkbox" class="form-check-input me-1" @bind="_autoRefresh" />
+        Auto-Refresh (@(_autoRefresh ? "On" : "Off"))
+    </label>
+</div>
+
+@if (_loading)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-4">
+            <h5>Stats by Severity</h5>
+
+            <!-- Filter-Dropdown -->
+            <div class="mb-2">
+                <label class="me-2">Filter:</label>
+                <select class="form-select d-inline-block w-auto" @bind="_filterSeverity">
+                    <option value="">(alle)</option>
+                    <option>Info</option>
+                    <option>Warning</option>
+                    <option>High</option>
+                    <option>Critical</option>
+                </select>
+            </div>
+
+            <ul>
+                @foreach (var s in _stats)
+                {
+                    <li><strong>@s.severity</strong>: @s.count</li>
+                }
+            </ul>
+        </div>
+        <div class="col-md-8">
+            <h5>Recent Logs (@_logs.Count)</h5>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Time (UTC)</th>
+                        <th>Source</th>
+                        <th>Severity</th>
+                        <th>Message</th>
+                        <th>Metadata</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var l in _logs
+                        .Where(x => string.IsNullOrEmpty(_filterSeverity) || x.severity == _filterSeverity)
+                        .OrderByDescending(x => x.timestamp)
+                        .Take(50))
+                    {
+                        <tr>
+                            <td>@l.timestamp?.ToString("u")</td>
+                            <td>@l.source</td>
+                            <td>@RenderSeverity(l.severity)</td>
+                            <td>@l.message</td>
+                            <td><code>@l.metadata</code></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    // ---------- State ----------
+    List<SecurityLog> _logs = new();
+    List<LogStat> _stats = new();
+    bool _loading = true;
+    bool _autoRefresh = true;
+    PeriodicTimer? _timer;
+
+    // Filter
+    string _filterSeverity = "";
+
+    // Formularmodell
+    SecurityLog _newLog = new()
+{
+    source = "zap",
+    severity = "Warning",
+    message = "",
+    metadata = "",
+    timestamp = null
+};
+
+    bool _submitting = false;
+    string? _formMsg;
+
+    // ---------- Lifecycle ----------
+    protected override async Task OnInitializedAsync()
+    {
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        _ = AutoRefreshLoop();
+        await LoadData();
+    }
+
+    async Task AutoRefreshLoop()
+    {
+        while (_timer != null && await _timer.WaitForNextTickAsync())
+        {
+            if (_autoRefresh) await LoadData();
+            StateHasChanged();
+        }
+    }
+
+    // ---------- Data ----------
+    async Task LoadData()
+    {
+        try
+        {
+            _loading = true;
+            var client = HttpClientFactory.CreateClient("Api");
+            _logs = await client.GetFromJsonAsync<List<SecurityLog>>("/api/logs") ?? new();
+            _stats = await client.GetFromJsonAsync<List<LogStat>>("/api/logs/stats") ?? new();
+        }
+        finally { _loading = false; }
+    }
+
+    // ---------- Form Actions ----------
+    async Task SubmitLog()
+    {
+        if (string.IsNullOrWhiteSpace(_newLog.source) ||
+            string.IsNullOrWhiteSpace(_newLog.severity) ||
+            string.IsNullOrWhiteSpace(_newLog.message))
+        {
+            _formMsg = "Bitte Source, Severity und Message ausfüllen.";
+            return;
+        }
+
+        try
+        {
+            _submitting = true;
+            _formMsg = null;
+
+            var client = HttpClientFactory.CreateClient("Api");
+            var resp = await client.PostAsJsonAsync("/api/logs", _newLog);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                _formMsg = "✅ Log gespeichert.";
+                ResetForm();
+                await LoadData();
+            }
+            else
+            {
+                var text = await resp.Content.ReadAsStringAsync();
+                _formMsg = $"❌ Fehler: {resp.StatusCode} - {text}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _formMsg = "❌ Ausnahme: " + ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    void ResetForm()
+{
+    _newLog = new SecurityLog
+    {
+        source = "zap",
+        severity = "Warning",
+        message = "",
+        metadata = "",
+        timestamp = null
+    };
+}
+
+
+    // ---------- UI Helpers ----------
+    RenderFragment RenderSeverity(string sev) => builder =>
+    {
+        var (cls, label) = sev switch
+        {
+            "Critical" => ("badge bg-danger", "Critical"),
+            "High"     => ("badge bg-warning text-dark", "High"),
+            "Warning"  => ("badge bg-info text-dark", "Warning"),
+            _          => ("badge bg-secondary", "Info")
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", cls);
+        builder.AddContent(2, label);
+        builder.CloseElement();
+    };
+}

@@ -8,12 +8,35 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
 
+
+/*
+builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
+    p.AllowAnyHeader()
+     .AllowAnyMethod()
+     .WithOrigins(
+        "http://localhost:5000", "https://localhost:5001",  // häufige Dev-Ports
+        "http://localhost:5242", "https://localhost:7242"   // typischer Blazor-Port
+     )
+));*/
+
+
+builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
+    p.AllowAnyHeader()
+     .AllowAnyMethod()
+     .AllowAnyOrigin()   // <— für lokale Entwicklung am einfachsten
+));
+
+
+
 var app = builder.Build();
 
 // Middleware
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpMetrics(); // Prometheus request metrics
+
+
+app.UseCors("frontend");
 
 // Health + Metrics
 app.MapHealthChecks("/health", new HealthCheckOptions());
