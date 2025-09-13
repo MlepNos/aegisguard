@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Prometheus;
+using AegisGuard.Infrastructure;
+using Microsoft.EntityFrameworkCore;
+using AegisGuard.Domain;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +29,12 @@ builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
      .AllowAnyOrigin()   // <— für lokale Entwicklung am einfachsten
 ));
 
+builder.Services.AddDbContext<AppDbContext>(opt =>
+    opt.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        b => b.MigrationsAssembly("AegisGuard.Api")   // <— Migrationen ins API-Projekt
+    )
+);
 
 
 var app = builder.Build();
@@ -43,8 +52,11 @@ app.MapHealthChecks("/health", new HealthCheckOptions());
 app.MapMetrics(); // /metrics
 
 // InMemory-Store (Schritt 1: noch ohne DB)
-var logs = new List<SecurityLog>();
+// var logs = new List<SecurityLog>();
 
+
+
+/*
 // Endpoints
 app.MapPost("/api/logs", (SecurityLog log) =>
 {
@@ -69,8 +81,54 @@ app.MapGet("/api/logs/stats", () =>
 })
 .WithName("GetLogStats")
 .WithOpenApi();
+*/
+
+// POST: Log anlegen (DB)
+app.MapPost("/api/logs", async (SecurityLogCreateDto input, AppDbContext db) =>
+{
+    var entity = new SecurityLog
+    {
+        Source    = input.Source,
+        Severity  = input.Severity,
+        Message   = input.Message,
+        Metadata  = input.Metadata,
+        Timestamp = DateTime.UtcNow
+    };
+
+    db.SecurityLogs.Add(entity);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/logs/{entity.Id}", entity);
+})
+.WithName("IngestLog")
+.WithOpenApi();
+
+// GET: Alle Logs (neueste zuerst)
+app.MapGet("/api/logs", async (AppDbContext db) =>
+    await db.SecurityLogs
+            .OrderByDescending(l => l.Timestamp)
+            .ToListAsync())
+.WithName("GetLogs")
+.WithOpenApi();
+
+// GET: Stats (Counts pro Severity)
+app.MapGet("/api/logs/stats", async (AppDbContext db) =>
+{
+    var stats = await db.SecurityLogs
+        .GroupBy(l => l.Severity)
+        .Select(g => new { severity = g.Key, count = g.Count() })
+        .OrderByDescending(x => x.count)
+        .ToListAsync();
+
+    return Results.Ok(stats);
+})
+.WithName("GetLogStats")
+.WithOpenApi();
+
 
 app.Run();
+public record SecurityLogCreateDto(string Source, string Severity, string Message, string? Metadata);
 
 // Datentyp
-public record SecurityLog(string Source, string Severity, string Message, string? Metadata, DateTime? Timestamp);
+//public record SecurityLog(string Source, string Severity, string Message, string? Metadata, DateTime? Timestamp);
+public partial class Program { } // für WebApplicationFactory in Integrationstests
