@@ -24,20 +24,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # semgrep-action: wir geben die Config an und erzeugen SARIF via args
       - name: Run Semgrep
         uses: returntocorp/semgrep-action@v1
         with:
-          config: semgrep.yml
-          args: --sarif --output=semgrep.sarif
+          # optional: mehrere Konfigurationen möglich (jede Zeile eine Config)
+          config: |
+            semgrep.yml
+            # p/owasp-top-ten
+            # p/secrets
+            # r/csharp
+            # r/javascript
+          generate-sarif: true
+          sarif_report: semgrep.sarif
         env:
           SEMGREP_ENABLE_VERSION_CHECK: "0"
+          # falls du ein Semgrep App Token hast:
+          # SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 
       - name: Upload Semgrep SARIF
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
           category: semgrep
+
 
   trivy-fs:
     name: Trivy FS scan (Repo)
