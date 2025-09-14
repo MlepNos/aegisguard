@@ -1,4 +1,5 @@
 using AegisGuard.Blazor.Components;
+using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +11,9 @@ builder.Services.AddHttpClient("Api", c =>
 {
     c.BaseAddress = new Uri("http://localhost:5120"); // Backend-URL
 });
+
+builder.Services.AddMudServices();   // <— neu
+
 
 var app = builder.Build();
 

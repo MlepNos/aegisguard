@@ -1,9 +1,8 @@
 @page "/dashboard"
 @rendermode InteractiveServer
-
 @using System.Net.Http.Json
-@using AegisGuard.Blazor
 @inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
 
 <h3 class="mb-3">AegisGuard – Security Dashboard</h3>
 
@@ -11,10 +10,11 @@
 <div class="card mb-4">
     <div class="card-body">
         <h5 class="card-title">Neuen Log erstellen</h5>
+
         <div class="row g-3">
             <div class="col-md-3">
                 <label class="form-label">Source</label>
-                <input class="form-control" @bind="_newLog.source" placeholder="z.B. zap, trivy, zaproxy" />
+                <input class="form-control" @bind="_newLog.source" placeholder="z.B. zap, trivy" />
             </div>
             <div class="col-md-3">
                 <label class="form-label">Severity</label>
@@ -47,12 +47,24 @@
 </div>
 
 <!-- Refresh / Auto-Refresh -->
-<div class="mb-3">
-    <button class="btn btn-primary me-2" @onclick="LoadData">Refresh</button>
-    <label class="ms-2">
-        <input type="checkbox" class="form-check-input me-1" @bind="_autoRefresh" />
-        Auto-Refresh (@(_autoRefresh ? "On" : "Off"))
-    </label>
+<div class="mb-3 d-flex align-items-center gap-3">
+    <button class="btn btn-primary" @onclick="LoadData">Refresh</button>
+
+    <div class="form-check form-switch">
+        <input id="autorf" class="form-check-input" type="checkbox" @bind="_autoRefresh" />
+        <label class="form-check-label" for="autorf">Auto-Refresh (@(_autoRefresh ? "On" : "Off"))</label>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+        <label class="form-label m-0">Filter:</label>
+        <select class="form-select form-select-sm" style="width: 160px" @bind="_filterSeverity">
+            <option value="">(alle)</option>
+            <option>Info</option>
+            <option>Warning</option>
+            <option>High</option>
+            <option>Critical</option>
+        </select>
+    </div>
 </div>
 
 @if (_loading)
@@ -61,29 +73,24 @@
 }
 else
 {
-    <div class="row">
+    <div class="row g-4">
         <div class="col-md-4">
             <h5>Stats by Severity</h5>
-
-            <!-- Filter-Dropdown -->
-            <div class="mb-2">
-                <label class="me-2">Filter:</label>
-                <select class="form-select d-inline-block w-auto" @bind="_filterSeverity">
-                    <option value="">(alle)</option>
-                    <option>Info</option>
-                    <option>Warning</option>
-                    <option>High</option>
-                    <option>Critical</option>
-                </select>
-            </div>
-
-            <ul>
+            <ul class="mb-3">
                 @foreach (var s in _stats)
                 {
                     <li><strong>@s.severity</strong>: @s.count</li>
                 }
             </ul>
+
+            <!-- Chart -->
+            <div class="card">
+                <div class="card-body">
+                    <canvas id="sevChart" height="180"></canvas>
+                </div>
+            </div>
         </div>
+
         <div class="col-md-8">
             <h5>Recent Logs (@_logs.Count)</h5>
             <table class="table table-sm">
@@ -105,7 +112,7 @@ else
                         <tr>
                             <td>@l.timestamp?.ToString("u")</td>
                             <td>@l.source</td>
-                            <td>@RenderSeverity(l.severity)</td>
+                            <td>@RenderSeverityBadge(l.severity)</td>
                             <td>@l.message</td>
                             <td><code>@l.metadata</code></td>
                         </tr>
@@ -117,30 +124,48 @@ else
 }
 
 @code {
-    // ---------- State ----------
-    List<SecurityLog> _logs = new();
+    // ----------------- Modelle -----------------
+    public class SecurityLogDto
+    {
+        public string? source { get; set; }
+        public string? severity { get; set; }
+        public string? message { get; set; }
+        public string? metadata { get; set; }
+        public DateTime? timestamp { get; set; }
+    }
+
+    public class LogStat
+    {
+        public string severity { get; set; } = "";
+        public int count { get; set; }
+    }
+
+    public class NewLogModel
+    {
+        public string? source { get; set; } = "zap";
+        public string? severity { get; set; } = "Warning";
+        public string? message { get; set; } = "";
+        public string? metadata { get; set; } = "";
+    }
+
+    // ----------------- State -----------------
+    List<SecurityLogDto> _logs = new();
     List<LogStat> _stats = new();
     bool _loading = true;
     bool _autoRefresh = true;
     PeriodicTimer? _timer;
-
-    // Filter
     string _filterSeverity = "";
-
-    // Formularmodell
-    SecurityLog _newLog = new()
-{
-    source = "zap",
-    severity = "Warning",
-    message = "",
-    metadata = "",
-    timestamp = null
-};
-
+    NewLogModel _newLog = new();
     bool _submitting = false;
     string? _formMsg;
 
-    // ---------- Lifecycle ----------
+    // Chart
+    IJSObjectReference? _chartsModule;
+    bool _shouldRenderChart;
+    string[] _chartLabels = Array.Empty<string>();
+    int[] _chartCounts = Array.Empty<int>();
+
+    // ----------------- Lifecycle -----------------
     protected override async Task OnInitializedAsync()
     {
         _timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
@@ -157,25 +182,47 @@ else
         }
     }
 
-    // ---------- Data ----------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _chartsModule = await JS.InvokeAsync<IJSObjectReference>("import", "/js/dashboard-charts.js");
+        }
+
+        if ((firstRender || _shouldRenderChart)
+            && _chartsModule is not null
+            && _chartLabels.Length > 0)
+        {
+            _shouldRenderChart = false;
+            await _chartsModule.InvokeVoidAsync("renderBarChart", "sevChart", _chartLabels, _chartCounts);
+        }
+    }
+
+    // ----------------- Data -----------------
     async Task LoadData()
     {
         try
         {
             _loading = true;
             var client = HttpClientFactory.CreateClient("Api");
-            _logs = await client.GetFromJsonAsync<List<SecurityLog>>("/api/logs") ?? new();
+            _logs  = await client.GetFromJsonAsync<List<SecurityLogDto>>("/api/logs") ?? new();
             _stats = await client.GetFromJsonAsync<List<LogStat>>("/api/logs/stats") ?? new();
+
+            _chartLabels = _stats.Select(s => s.severity).ToArray();
+            _chartCounts = _stats.Select(s => s.count).ToArray();
+
+            _shouldRenderChart = true;
+            StateHasChanged();
         }
         finally { _loading = false; }
     }
 
-    // ---------- Form Actions ----------
+    // ----------------- Form Actions -----------------
     async Task SubmitLog()
     {
-        if (string.IsNullOrWhiteSpace(_newLog.source) ||
-            string.IsNullOrWhiteSpace(_newLog.severity) ||
-            string.IsNullOrWhiteSpace(_newLog.message))
+        if (string.IsNullOrWhiteSpace(_newLog.source)
+            || string.IsNullOrWhiteSpace(_newLog.severity)
+            || string.IsNullOrWhiteSpace(_newLog.message))
         {
             _formMsg = "Bitte Source, Severity und Message ausfüllen.";
             return;
@@ -197,46 +244,28 @@ else
             }
             else
             {
-                var text = await resp.Content.ReadAsStringAsync();
-                _formMsg = $"❌ Fehler: {resp.StatusCode} - {text}";
+                _formMsg = $"❌ Fehler: {resp.StatusCode} - {await resp.Content.ReadAsStringAsync()}";
             }
         }
         catch (Exception ex)
         {
             _formMsg = "❌ Ausnahme: " + ex.Message;
         }
-        finally
-        {
-            _submitting = false;
-        }
+        finally { _submitting = false; }
     }
 
-    void ResetForm()
-{
-    _newLog = new SecurityLog
-    {
-        source = "zap",
-        severity = "Warning",
-        message = "",
-        metadata = "",
-        timestamp = null
-    };
-}
+    void ResetForm() => _newLog = new();
 
-
-    // ---------- UI Helpers ----------
-    RenderFragment RenderSeverity(string sev) => builder =>
+    // ----------------- UI helpers -----------------
+    MarkupString RenderSeverityBadge(string? sev)
     {
-        var (cls, label) = sev switch
+        var (cls, txt) = sev switch
         {
             "Critical" => ("badge bg-danger", "Critical"),
             "High"     => ("badge bg-warning text-dark", "High"),
             "Warning"  => ("badge bg-info text-dark", "Warning"),
             _          => ("badge bg-secondary", "Info")
         };
-        builder.OpenElement(0, "span");
-        builder.AddAttribute(1, "class", cls);
-        builder.AddContent(2, label);
-        builder.CloseElement();
-    };
+        return new MarkupString($"<span class=\"{cls}\">{txt}</span>");
+    }
 }
