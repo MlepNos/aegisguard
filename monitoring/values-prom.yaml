@@ -1,0 +1,9 @@
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    serviceMonitorSelector: {}            # <— allow any ServiceMonitor labels
+    serviceMonitorNamespaceSelector: {}   # <— allow any namespace
+    podMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+grafana:
+  adminPassword: "admin"

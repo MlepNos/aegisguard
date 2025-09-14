@@ -1,5 +1,8 @@
 # Secrets / Environment
 .env
+*.secret
+*.key
+*.crt
 
 # .NET build artifacts
 **/bin/
@@ -30,3 +33,8 @@
 *.sarif
 .semgrep/
 .trivy-cache/
+
+
+
+
+

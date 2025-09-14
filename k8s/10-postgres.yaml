@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgdata
+  namespace: aegis
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: aegis
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: db } }
+  template:
+    metadata: { labels: { app: db } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{ containerPort: 5432 }]
+          env:
+            - { name: POSTGRES_USER,     value: "aegis" }
+            - { name: POSTGRES_PASSWORD, value: "aegis" }
+            - { name: POSTGRES_DB,       value: "aegisguard" }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: pgdata }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: aegis
+spec:
+  selector: { app: db }
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

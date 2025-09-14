@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: aegis-backend
+  namespace: monitoring
+  labels:
+    release: monitor          # must match your Helm release name
+spec:
+  selector:
+    matchLabels:
+      app: backend            # matches your Service/Deployment label
+  namespaceSelector:
+    matchNames: ["aegis"]     # watch the app namespace
+  endpoints:
+    - port: http              # must match the Service port name
+      path: /metrics
+      interval: 15s
