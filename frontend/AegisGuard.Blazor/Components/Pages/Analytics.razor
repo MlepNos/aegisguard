@@ -1,0 +1,60 @@
+@page "/analytics"
+@inject IHttpClientFactory Http
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<h3>Analytics</h3>
+
+<div class="row g-4">
+  <div class="col-md-6">
+    <div class="card"><div class="card-body">
+      <h6>Severity über Zeit</h6>
+      <div style="height:260px"><canvas id="ch-sev-time"></canvas></div>
+    </div></div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card"><div class="card-body">
+      <h6>Top Sources</h6>
+      <div style="height:260px"><canvas id="ch-top-sources"></canvas></div>
+    </div></div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card"><div class="card-body">
+      <h6>Anteil pro Severity</h6>
+      <div style="height:260px"><canvas id="ch-sev-share"></canvas></div>
+    </div></div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card"><div class="card-body">
+      <h6>Heatmap (Tag × Stunde)</h6>
+      <div style="height:260px"><canvas id="ch-heatmap"></canvas></div>
+    </div></div>
+  </div>
+</div>
+
+@code {
+  IJSObjectReference? _mod;
+  object[] _sevByDay = [], _topSources = [], _sevShare = [], _heat = [];
+
+  protected override async Task OnInitializedAsync()
+  {
+    var api = Http.CreateClient("Api");
+    _sevByDay   = await api.GetFromJsonAsync<object[]>("/api/analytics/severity-by-day") ?? [];
+    _topSources = await api.GetFromJsonAsync<object[]>("/api/analytics/top-sources?limit=10") ?? [];
+    _sevShare   = await api.GetFromJsonAsync<object[]>("/api/analytics/severity-share") ?? [];
+    _heat       = await api.GetFromJsonAsync<object[]>("/api/analytics/hourly-heatmap") ?? [];
+  }
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (!firstRender) return;
+    _mod = await JS.InvokeAsync<IJSObjectReference>("import", "/js/analytics-charts.js");
+    await _mod.InvokeVoidAsync("renderSeverityOverTime", "ch-sev-time", _sevByDay);
+    await _mod.InvokeVoidAsync("renderTopSources",       "ch-top-sources", _topSources);
+    await _mod.InvokeVoidAsync("renderSeverityShare",    "ch-sev-share", _sevShare);
+    await _mod.InvokeVoidAsync("renderHeatmap",          "ch-heatmap", _heat);
+  }
+}

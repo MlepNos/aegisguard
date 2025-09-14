@@ -51,6 +51,69 @@ app.UseCors("frontend");
 app.MapHealthChecks("/health", new HealthCheckOptions());
 app.MapMetrics(); // /metrics
 
+
+app.MapGet("/api/analytics/severity-by-day", async (AppDbContext db) =>
+{
+    var since = DateTime.UtcNow.Date.AddDays(-30);
+
+    var rows = await db.SecurityLogs
+        .AsNoTracking()
+        .Where(x => x.Timestamp >= since)
+        .GroupBy(x => new { day = x.Timestamp.Date, x.Severity })
+        .Select(g => new
+        {
+            g.Key.day,
+            g.Key.Severity,
+            Count = g.Count()
+        })
+        .OrderBy(r => r.day)
+        .ThenBy(r => r.Severity)
+        .ToListAsync();
+
+    return Results.Ok(rows);
+});
+
+app.MapGet("/api/analytics/top-sources", async (AppDbContext db, int limit = 10) =>
+{
+    var rows = await db.SecurityLogs
+        .GroupBy(x => x.Source!)
+        .Select(g => new { name = g.Key, count = g.Count() })
+        .OrderByDescending(x => x.count)
+        .Take(limit)
+        .ToListAsync();
+    return Results.Ok(rows);
+});
+
+app.MapGet("/api/analytics/severity-share", async (AppDbContext db) =>
+{
+    var rows = await db.SecurityLogs
+        .GroupBy(x => x.Severity!)
+        .Select(g => new { severity = g.Key, count = g.Count() })
+        .ToListAsync();
+    return Results.Ok(rows);
+});
+
+// /api/analytics/hourly-heatmap
+app.MapGet("/api/analytics/hourly-heatmap", async (AppDbContext db) =>
+{
+    var since = DateTime.UtcNow.AddDays(-7);
+
+    var rows = await db.SecurityLogs
+        .Where(x => x.Timestamp >= since)
+        .Select(x => new
+        {
+            // .DayOfWeek: 0..6 (So..Sa)
+            day  = (int)x.Timestamp.DayOfWeek,
+            hour = x.Timestamp.Hour
+        })
+        .GroupBy(x => new { x.day, x.hour })
+        .Select(g => new { g.Key.day, g.Key.hour, value = g.Count() })
+        .OrderBy(x => x.day).ThenBy(x => x.hour)
+        .ToListAsync();
+
+    return Results.Ok(rows);
+});
+
 // InMemory-Store (Schritt 1: noch ohne DB)
 // var logs = new List<SecurityLog>();
 
