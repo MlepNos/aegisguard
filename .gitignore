@@ -1,10 +1,32 @@
-@"
-bin/
-obj/
+# Secrets / Environment
+.env
+
+# .NET build artifacts
+**/bin/
+**/obj/
+**/publish/
+**/TestResults/
+*.log
+*.trx
+*.coverage*
+
+# IDE
+.vs/
+.vscode/
+.idea/
 *.user
 *.suo
 *.swp
-.vs/
-TestResults/
-*.log
-"@ | Out-File -Encoding utf8 .gitignore
+
+# Blazor/Frontend
+**/wwwroot/lib/
+**/node_modules/
+*.map
+
+# ASP.NET Data Protection keys (falls lokal im Repo abgelegt)
+**/DataProtection-Keys/
+
+# Security scanner outputs (lokal)
+*.sarif
+.semgrep/
+.trivy-cache/

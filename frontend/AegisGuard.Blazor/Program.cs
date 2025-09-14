@@ -1,5 +1,6 @@
 using AegisGuard.Blazor.Components;
 using MudBlazor.Services;
+using Microsoft.AspNetCore.Components; // add this
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,10 +8,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-builder.Services.AddHttpClient("Api", c =>
+
+builder.Services.AddHttpClient("Api", (sp, c) =>
 {
-    c.BaseAddress = new Uri("http://localhost:5120"); // Backend-URL
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var baseUrl = cfg["ApiBaseUrl"];              // read from env/appsettings
+    if (!string.IsNullOrWhiteSpace(baseUrl))
+        c.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
+    // else you could fall back to Nav.BaseUri, but for separate backend we want absolute
 });
+/*
+builder.Services.AddHttpClient("Api", (sp, c) =>
+{
+    var nav = sp.GetRequiredService<NavigationManager>();
+    c.BaseAddress = new Uri(nav.BaseUri); // e.g., http://localhost:5270/
+});*/
 
 builder.Services.AddMudServices();   // <— neu
 
@@ -25,7 +37,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 
 app.UseAntiforgery();

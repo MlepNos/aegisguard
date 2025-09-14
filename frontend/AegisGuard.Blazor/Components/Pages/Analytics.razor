@@ -3,6 +3,8 @@
 @inject IJSRuntime JS
 @rendermode InteractiveServer
 
+@inject NavigationManager Nav
+
 <h3>Analytics</h3>
 
 <div class="row g-4">
@@ -42,6 +44,8 @@
   protected override async Task OnInitializedAsync()
   {
     var api = Http.CreateClient("Api");
+    //api.BaseAddress ??= new Uri(Nav.BaseUri);   // important: set base once
+
     _sevByDay   = await api.GetFromJsonAsync<object[]>("/api/analytics/severity-by-day") ?? [];
     _topSources = await api.GetFromJsonAsync<object[]>("/api/analytics/top-sources?limit=10") ?? [];
     _sevShare   = await api.GetFromJsonAsync<object[]>("/api/analytics/severity-share") ?? [];

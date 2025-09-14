@@ -11,7 +11,15 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHealthChecks();
 
+var connStr = Environment.GetEnvironmentVariable("ConnectionStrings__Default")
+             ?? builder.Configuration.GetConnectionString("Default")
+             ?? "Host=localhost;Port=5432;Database=aegisguard;Username=aegis;Password=aegis";
 
+
+
+builder.Services.AddDbContext<AppDbContext>(opt =>
+    opt.UseNpgsql(connStr, b => b.MigrationsAssembly("AegisGuard.Api"))
+);
 /*
 builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
     p.AllowAnyHeader()
@@ -28,7 +36,7 @@ builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
      .AllowAnyMethod()
      .AllowAnyOrigin()   // <— für lokale Entwicklung am einfachsten
 ));
-
+/*
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
@@ -36,6 +44,11 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     )
 );
 
+
+builder.Logging.AddConsole();
+builder.Services.AddHealthChecks()
+    .AddNpgSql(connStr, name: "postgres");
+*/
 
 var app = builder.Build();
 

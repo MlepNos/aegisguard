@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using System.Net.Http.Json
 @inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
 @inject IJSRuntime JS
 
 <h3 class="mb-3">AegisGuard – Security Dashboard</h3>
@@ -165,9 +166,15 @@ else
     string[] _chartLabels = Array.Empty<string>();
     int[] _chartCounts = Array.Empty<int>();
 
+    // API client (reused)
+    HttpClient? _api;
+
     // ----------------- Lifecycle -----------------
     protected override async Task OnInitializedAsync()
     {
+        _api = HttpClientFactory.CreateClient("Api");
+        //_api.BaseAddress ??= new Uri(Nav.BaseUri);   // set once for relative URLs
+
         _timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
         _ = AutoRefreshLoop();
         await LoadData();
@@ -204,9 +211,8 @@ else
         try
         {
             _loading = true;
-            var client = HttpClientFactory.CreateClient("Api");
-            _logs  = await client.GetFromJsonAsync<List<SecurityLogDto>>("/api/logs") ?? new();
-            _stats = await client.GetFromJsonAsync<List<LogStat>>("/api/logs/stats") ?? new();
+            _logs  = await _api!.GetFromJsonAsync<List<SecurityLogDto>>("/api/logs")        ?? new();
+            _stats = await _api!.GetFromJsonAsync<List<LogStat>>("/api/logs/stats")         ?? new();
 
             _chartLabels = _stats.Select(s => s.severity).ToArray();
             _chartCounts = _stats.Select(s => s.count).ToArray();
@@ -221,8 +227,8 @@ else
     async Task SubmitLog()
     {
         if (string.IsNullOrWhiteSpace(_newLog.source)
-            || string.IsNullOrWhiteSpace(_newLog.severity)
-            || string.IsNullOrWhiteSpace(_newLog.message))
+         || string.IsNullOrWhiteSpace(_newLog.severity)
+         || string.IsNullOrWhiteSpace(_newLog.message))
         {
             _formMsg = "Bitte Source, Severity und Message ausfüllen.";
             return;
@@ -233,8 +239,7 @@ else
             _submitting = true;
             _formMsg = null;
 
-            var client = HttpClientFactory.CreateClient("Api");
-            var resp = await client.PostAsJsonAsync("/api/logs", _newLog);
+            var resp = await _api!.PostAsJsonAsync("/api/logs", _newLog);
 
             if (resp.IsSuccessStatusCode)
             {
