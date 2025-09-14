@@ -1,0 +1,108 @@
+name: Security CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write    # für SARIF Upload
+  actions: read
+
+jobs:
+  # --- SAST mit Semgrep (fertig, aber hier als GitHub Action) ---
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Offizielle Action – liest semgrep.yml automatisch
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: semgrep.yml
+          generateSarif: "1"
+          publishToken: ""   # kein cloud upload
+        env:
+          SEMGREP_APP_TOKEN: ""  # nicht nötig ohne Cloud
+
+      # SARIF hochladen (liegt unter semgrep.sarif)
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+
+  # --- Trivy: Repository-Scan (Code + Secrets + IaC) ---
+  trivy-fs:
+    name: Trivy FS scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy filesystem scan (vuln,secret,config)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scanners: 'vuln,secret,config'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-fs.sarif'
+          severity: 'CRITICAL,HIGH'
+          # Trivy liest .trivyignore automatisch
+
+      - name: Upload Trivy FS SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+
+  # --- Trivy: Container-Image-Scan (wenn Dockerfile vorhanden) ---
+  trivy-image:
+    name: Trivy Image scan
+    runs-on: ubuntu-latest
+    needs: trivy-fs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image (backend)
+        run: |
+          docker build -t aegisguard-api:ci ./backend/AegisGuard.Api
+          # optional: UI image
+          # docker build -t aegisguard-ui:ci ./frontend/AegisGuard.Blazor
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: 'aegisguard-api:ci'
+          format: 'sarif'
+          output: 'trivy-image.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Upload Trivy Image SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+
+  # --- ZAP Baseline (optional, non-blocking) ---
+  zap-baseline:
+    name: OWASP ZAP Baseline (optional)
+    runs-on: ubuntu-latest
+    needs: [semgrep, trivy-fs]
+    continue-on-error: true   # damit es (noch) nicht blockt
+    steps:
+      - uses: actions/checkout@v4
+
+      # (Optional) Ziel-URL. Standard: http://localhost:5270 (Blazor/Backend lokal)
+      - name: Set target
+        id: tgt
+        run: |
+          echo "target=${{ vars.ZAP_TARGET || 'http://example.com' }}" >> $GITHUB_OUTPUT
+
+      # Schnelltest gegen eine URL (empfohlen gegen Staging/Dev-URL)
+      - name: ZAP Baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ steps.tgt.outputs.target }}
+          rules_file_name: '.zap-rules.tsv'   # optional fürs Tuning
+          cmd_options: '-a'                   # aggressive passive scan

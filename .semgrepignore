@@ -1,0 +1,5 @@
+# generierte Ordner und Libs ausschließen
+**/bin/**
+**/obj/**
+**/node_modules/**
+frontend/wwwroot/lib/**

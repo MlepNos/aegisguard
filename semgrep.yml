@@ -1,0 +1,22 @@
+includes:
+  - "**/*.cs"
+  - "**/*.razor"
+  - "**/*.js"
+  - "**/*.ts"
+
+config:
+  - p/owasp-top-ten
+  - p/secrets
+  - r/csharp
+  - r/javascript
+
+# Optional Ordner ausschließen
+# skip:
+#   - "frontend/wwwroot/lib/**"
+rules:
+  - id: aegisguard-dangerous-process-start
+    languages: [csharp]
+    message: "Nutze ProcessStartInfo mit Escape/Argumenten statt direktem Shell-Aufruf."
+    severity: WARNING
+    pattern: |
+      Process.Start($CMD)

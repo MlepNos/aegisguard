@@ -1,0 +1,6 @@
+# Beispiel: CVEs ignorieren (bis zu einem Datum optional via :2025-12-31)
+CVE-2021-33574
+# Pfade ignorieren (z.B. generierte Dateien oder Testdaten)
+**/bin/**
+**/obj/**
+frontend/wwwroot/lib/**
