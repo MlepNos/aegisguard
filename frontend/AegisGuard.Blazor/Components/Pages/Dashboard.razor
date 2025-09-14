@@ -206,22 +206,44 @@ else
     }
 
     // ----------------- Data -----------------
-    async Task LoadData()
+
+    string? _error; // add at top with other state fields
+
+async Task<T?> GetJsonSafe<T>(string url)
+{
+    try
     {
-        try
+        var resp = await _api!.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        if (!resp.IsSuccessStatusCode)
         {
-            _loading = true;
-            _logs  = await _api!.GetFromJsonAsync<List<SecurityLogDto>>("/api/logs")        ?? new();
-            _stats = await _api!.GetFromJsonAsync<List<LogStat>>("/api/logs/stats")         ?? new();
-
-            _chartLabels = _stats.Select(s => s.severity).ToArray();
-            _chartCounts = _stats.Select(s => s.count).ToArray();
-
-            _shouldRenderChart = true;
-            StateHasChanged();
+            _error = $"GET {url} -> {(int)resp.StatusCode} {resp.ReasonPhrase}";
+            return default;
         }
-        finally { _loading = false; }
+        return await resp.Content.ReadFromJsonAsync<T>();
     }
+    catch (Exception ex)
+    {
+        _error = $"GET {url} failed: {ex.Message}";
+        return default;
+    }
+}
+   async Task LoadData()
+{
+    _loading = true;
+    _error = null;
+    try
+    {
+        _logs  = await GetJsonSafe<List<SecurityLogDto>>("/api/logs")        ?? new();
+        _stats = await GetJsonSafe<List<LogStat>>("/api/logs/stats")         ?? new();
+
+        _chartLabels = _stats.Select(s => s.severity).ToArray();
+        _chartCounts = _stats.Select(s => s.count).ToArray();
+
+        _shouldRenderChart = true;
+        StateHasChanged();
+    }
+    finally { _loading = false; }
+}
 
     // ----------------- Form Actions -----------------
     async Task SubmitLog()

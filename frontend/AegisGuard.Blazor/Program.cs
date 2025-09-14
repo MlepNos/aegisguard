@@ -5,8 +5,12 @@ using Microsoft.AspNetCore.Components; // add this
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+builder.Services
+    .AddRazorComponents()
+    .AddInteractiveServerComponents(o =>
+    {
+        o.DetailedErrors = true; // <— see full exception instead of generic circuit error
+    });
 
 
 builder.Services.AddHttpClient("Api", (sp, c) =>
