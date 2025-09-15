@@ -32,7 +32,7 @@ services:
       retries: 20
 
   frontend:
-    image: mlepnos/aegisguard-frontend:1.1
+    image: mlepnos/aegisguard-frontend:1.2.5     #mlepnos/aegisguard-frontend:1.2.3 
     container_name: aegisguard_frontend
     depends_on: 
       - backend
@@ -40,7 +40,43 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://0.0.0.0:5270
       ApiBaseUrl: http://backend:8080   # Program.cs reads this
+      Grafana__BaseUrl: http://localhost:3000
+      Grafana__DashboardUid: "aegis-guard"   # or set your UID
     ports: ["5270:5270"]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: aegisguard_prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: aegisguard_grafana
+    environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/"
+      GF_SESSION_COOKIE_SAMESITE: "none"   # allow sending inside an iframe
+      GF_SESSION_COOKIE_SECURE: "false"    # http in dev; set true if you serve https
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
 
 volumes:
   db_data:
+  prom_data:

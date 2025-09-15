@@ -42,6 +42,27 @@ if (!app.Environment.IsDevelopment())
 }
 
 //app.UseHttpsRedirection();
+// Allow Grafana iframe during local development
+if (app.Environment.IsDevelopment())
+{
+    app.Use(async (ctx, next) =>
+    {
+        // If you already set CSP elsewhere, just make sure frame-src contains http://localhost:3000
+        const string csp =
+            "default-src 'self'; " +
+            "img-src 'self' data:; " +
+            "script-src 'self'; " +
+            "style-src 'self' 'unsafe-inline'; " +
+            "font-src 'self' data:; " +
+            "connect-src 'self'; " +
+            "frame-src 'self' http://localhost:3000;";  // <- allow Grafana
+
+        ctx.Response.Headers.Remove("X-Frame-Options");           // DENY would block iframes
+        ctx.Response.Headers["Content-Security-Policy"] = csp;    // add/replace CSP
+
+        await next();
+    });
+}
 
 
 app.UseAntiforgery();

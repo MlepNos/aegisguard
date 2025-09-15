@@ -1,0 +1,38 @@
+.grafana { padding: 0.5rem 0; }
+
+.grafana__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .75rem;
+}
+
+.grafana__frame {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 220px); /* leave room for app chrome */
+  min-height: 600px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 6px 24px rgba(0,0,0,.2);
+  background: #0b0f17;
+}
+
+.grafana__frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.grafana__loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(11,15,23,.85), rgba(11,15,23,.6));
+  backdrop-filter: blur(2px);
+}

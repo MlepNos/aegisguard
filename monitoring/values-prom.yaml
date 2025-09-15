@@ -1,9 +1,34 @@
 prometheus:
   prometheusSpec:
     scrapeInterval: 15s
-    serviceMonitorSelector: {}            # <— allow any ServiceMonitor labels
-    serviceMonitorNamespaceSelector: {}   # <— allow any namespace
+    serviceMonitorSelector: {}             # allow any ServiceMonitor labels
+    serviceMonitorNamespaceSelector: {}    # allow any namespace
     podMonitorNamespaceSelector: {}
     podMonitorSelectorNilUsesHelmValues: false
+
 grafana:
-  adminPassword: "admin"
+  adminPassword: "admin"                   # will be used unless anonymous auth
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/grafana"
+      serve_from_sub_path: true
+    security:
+      allow_embedding: true                # allow iframing Grafana
+    auth.anonymous:
+      enabled: true                        # dev-only convenience
+      org_role: Viewer
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx                # change if your class differs
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    hosts:
+      - aegis.local                        # add to hosts file for local use
+    path: /grafana
+    pathType: Prefix
+    tls: []                                # no TLS for local dev
+
+  service:
+    port: 80

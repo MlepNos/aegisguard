@@ -17,6 +17,10 @@ spec:
             - { name: ASPNETCORE_URLS, value: "http://0.0.0.0:5270" }
             - { name: ASPNETCORE_ENVIRONMENT, value: "Production" }
             - { name: ApiBaseUrl, value: "http://backend.aegis.svc.cluster.local:8080" }
+
+            # 👇 add these
+            - { name: Grafana__BaseUrl, value: "http://aegis.local/grafana" }   # if using ingress host
+            - { name: Grafana__DashboardUid, value: "aegis-guard" }             # or leave "" if you want the home
 ---
 apiVersion: v1
 kind: Service

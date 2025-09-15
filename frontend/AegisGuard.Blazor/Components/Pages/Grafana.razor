@@ -1,0 +1,118 @@
+@page "/grafana"
+@inject IConfiguration Config
+@inject IJSRuntime JS
+
+<section class="grafana">
+    <header class="grafana__head">
+        <h3 class="m-0">Grafana</h3>
+        @if (!string.IsNullOrWhiteSpace(_src))
+        {
+            <div class="d-flex gap-2">
+                <a class="btn btn-sm btn-primary" target="_blank" href="@_src">Open in new tab</a>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="CopyLink">Copy link</button>
+            </div>
+        }
+    </header>
+
+    @if (string.IsNullOrWhiteSpace(_src))
+    {
+        <div class="alert alert-warning">
+            Could not determine Grafana URL. Set <code>Grafana:BaseUrl</code> …
+        </div>
+    }
+    else
+    {
+        <div class="grafana__frame">
+            @if (!_loaded)
+            {
+                <div class="grafana__loader">
+                    <div class="spinner-border text-light" role="status" aria-label="Loading Grafana"></div>
+                </div>
+            }
+
+            <!-- IMPORTANT: keep src and @onload -->
+            <iframe src="@_src"
+                    @ref="_frameRef"
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    @onload="OnFrameLoaded"
+                    allowfullscreen>
+            </iframe>
+        </div>
+
+        <p class="text-muted small mb-0">
+            Tip: kiosk mode is enabled in the URL. Make sure Grafana allows iframes
+            (<code>GF_SECURITY_ALLOW_EMBEDDING=true</code>) and anonymous view if you need it.
+        </p>
+    }
+</section>
+
+@code {
+    string? _src;
+    bool _loaded;
+    ElementReference _frameRef;
+    DotNetObjectReference<Grafana>? _selfRef;
+
+    protected override void OnInitialized()
+    {
+        var baseUrl  = Config["Grafana:BaseUrl"];
+        var uid      = Config["Grafana:DashboardUid"]; // e.g. "aegis-guard"
+        var orgId    = Config["Grafana:OrgId"] ?? "1";
+        var refresh  = Config["Grafana:Refresh"] ?? "10s";
+        if (string.IsNullOrWhiteSpace(baseUrl)) return;
+
+        var vars = Config.GetSection("Grafana:Vars").GetChildren()
+            .Select(c => (Key: c.Key?.Trim(), Val: c.Value?.Trim()))
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Val))
+            .ToDictionary(kv => kv.Key!, kv => kv.Val!, StringComparer.OrdinalIgnoreCase);
+
+        if (!vars.ContainsKey("DS_PROM") && vars.TryGetValue("DS_PROMETHEUS", out var prom)) vars["DS_PROM"] = prom;
+        if (!vars.ContainsKey("DS_PROMETHEUS") && vars.TryGetValue("DS_PROM", out var prom2)) vars["DS_PROMETHEUS"] = prom2;
+        if (!vars.ContainsKey("DS_PROM") && !vars.ContainsKey("DS_PROMETHEUS"))
+        { vars["DS_PROM"] = "Prometheus"; vars["DS_PROMETHEUS"] = "Prometheus"; }
+
+        string Encode(string s) => Uri.EscapeDataString(s);
+        var commonQs = $"orgId={Encode(orgId)}&kiosk&theme=dark&refresh={Encode(refresh)}";
+        var varQs = string.Join("&", vars.Select(kv => $"var-{Encode(kv.Key)}={Encode(kv.Value)}"));
+        var qs = string.IsNullOrEmpty(varQs) ? commonQs : $"{commonQs}&{varQs}";
+
+        var root = baseUrl.EndsWith("/") ? baseUrl.TrimEnd('/') : baseUrl;
+        _src = !string.IsNullOrWhiteSpace(uid)
+            ? $"{root}/d/{Uri.EscapeDataString(uid)}/dashboard?{qs}"
+            : $"{root}/dashboards?{qs}";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrWhiteSpace(_src))
+        {
+            // Fallback timer: hide spinner even if 'load' was missed
+            _selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("aegisGrafana.failSafeHide", 2000, _selfRef);
+        }
+    }
+
+    private async Task OnFrameLoaded()
+    {
+        _loaded = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable] public void IframeLoaded()
+    {
+        // Called by the fallback timer
+        if (!_loaded)
+        {
+            _loaded = true;
+            StateHasChanged();
+        }
+    }
+
+    async Task CopyLink()
+    {
+        if (!string.IsNullOrWhiteSpace(_src))
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _src);
+    }
+
+    public void Dispose() => _selfRef?.Dispose();
+}
